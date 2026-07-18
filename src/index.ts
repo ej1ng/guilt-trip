@@ -2,7 +2,11 @@ import "dotenv/config";
 import { Events } from "discord.js";
 
 import { commands } from "./commands/index.js";
+import { analyzeAndStoreMessageSentiment } from "./lib/analyze-message-sentiment.js";
+import { recordChannelMessage } from "./lib/channel-history.js";
 import { createDiscordClient } from "./lib/discord-client.js";
+import { sendKeywordCallout } from "./lib/keyword-callout.js";
+import { trackKeywordMessage } from "./lib/keyword-tracker.js";
 import { registerGuildCommands } from "./register-commands.js";
 
 function requireEnv(name: string) {
@@ -22,6 +26,24 @@ async function main() {
 
   client.once(Events.ClientReady, (readyClient) => {
     console.log(`Logged in as ${readyClient.user.tag}.`);
+  });
+
+  client.on(Events.MessageCreate, (message) => {
+    void Promise.resolve()
+      .then(async () => {
+        recordChannelMessage(message);
+
+        const keywordTrigger = trackKeywordMessage(message);
+
+        if (keywordTrigger) {
+          await sendKeywordCallout(message, keywordTrigger);
+        }
+
+        await analyzeAndStoreMessageSentiment(message);
+      })
+      .catch((error) => {
+        console.error("Failed to scan channel message:", error);
+      });
   });
 
   client.on(Events.InteractionCreate, async (interaction) => {

@@ -30,7 +30,7 @@ function stripJsonCodeFence(text: string) {
 }
 
 function buildExtractionPrompt(transcript: string) {
-  return `You extract abandoned trip ideas from Discord chat transcripts.
+  return `You extract pending or unresolved trip ideas from Discord chat transcripts.
 
 Return ONLY raw JSON matching this TypeScript shape:
 
@@ -54,10 +54,10 @@ Rules:
 - participants should be unique usernames who engaged with that trip idea.
 - firstMentioned and lastMentioned can be short quote/context labels if timestamps are unavailable.
 - If there is evidence the trip was actually booked, exclude it from the array.
-- Use status "dead" when people discussed, suggested, wished for, or lightly planned a trip/destination and there is no explicit evidence it was booked.
-- Use status "unclear" only when it is ambiguous whether the chat is about a real trip idea at all.
-- For this hackathon demo, bias toward finding plausible abandoned trip ideas instead of returning [].
-- If no abandoned trip ideas are present, return [].
+- Use status "dead" when people discussed, suggested, wished for, or lightly planned a trip/destination and there is no explicit conclusion, booking, cancellation, or final decision.
+- Use status "unclear" when it is a real trip idea but the group has not reached a conclusion yet.
+- For this hackathon demo, bias toward finding plausible pending trip ideas instead of returning [].
+- If no pending or unresolved trip ideas are present, return [].
 
 Transcript:
 ${transcript}`;

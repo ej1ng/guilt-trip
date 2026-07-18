@@ -3,91 +3,34 @@ import {
   ButtonBuilder,
   ButtonStyle,
   ChatInputCommandInteraction,
-  Collection,
   EmbedBuilder,
-  Message,
   SlashCommandBuilder,
 } from "discord.js";
 
 import { generateRoast } from "../lib/generate-roast.js";
-import { GeminiQuotaError, parseTrips } from "../lib/parse-trips.js";
-import { priceTrips } from "../lib/price-trips.js";
+import { GeminiQuotaError } from "../lib/parse-trips.js";
+import { getTripPipelineResult } from "../lib/trip-pipeline.js";
 import type { PricedTrip, RoastResult } from "../lib/types.js";
 
-const TARGET_MESSAGE_COUNT = 200;
-const PAGE_SIZE = 100;
-
-async function fetchRecentMessages(interaction: ChatInputCommandInteraction) {
-  const channel = interaction.channel;
-
-  if (!channel || !("messages" in channel)) {
-    throw new Error("This command must be run in a channel with readable message history.");
-  }
-
-  const messages: Message[] = [];
-  let before: string | undefined;
-
-  while (messages.length < TARGET_MESSAGE_COUNT) {
-    const remaining = TARGET_MESSAGE_COUNT - messages.length;
-    const limit = Math.min(PAGE_SIZE, remaining);
-
-    try {
-      const fetched: Collection<string, Message> = await channel.messages.fetch({
-        limit,
-        before,
-      });
-
-      if (fetched.size === 0) {
-        break;
-      }
-
-      messages.push(...fetched.values());
-      before = fetched.last()?.id;
-
-      if (fetched.size < limit) {
-        break;
-      }
-    } catch (error) {
-      if (messages.length > 0) {
-        console.warn("Stopped fetching message history early:", error);
-        break;
-      }
-
-      throw error;
-    }
-  }
-
-  return messages;
-}
-
-function formatTranscript(messages: Message[]) {
-  return messages
-    .filter((message) => !message.author.bot && message.content.trim().length > 0)
-    .sort((a, b) => a.createdTimestamp - b.createdTimestamp)
-    .map((message) => `${message.author.username}: ${message.content.trim()}`)
-    .join("\n");
-}
-
 function buildSummary(
-  deadDestinations: string[],
-  unclearDestinations: string[],
+  pendingDestinations: string[],
   pricedTrips: PricedTrip[],
 ) {
-  if (deadDestinations.length === 0 && unclearDestinations.length === 0) {
-    return "Autopsy complete: found 0 trip leads. Suspiciously innocent channel.";
+  if (pendingDestinations.length === 0) {
+    return "Autopsy complete: found 0 pending trip leads. Suspiciously decisive channel.";
   }
 
   const sections = [
-    `Autopsy complete: found ${deadDestinations.length} dead trip${
-      deadDestinations.length === 1 ? "" : "s"
+    `Autopsy complete: found ${pendingDestinations.length} pending trip${
+      pendingDestinations.length === 1 ? "" : "s"
     }.`,
   ];
 
-  if (deadDestinations.length > 0) {
-    sections.push(deadDestinations.map((destination) => `- ${destination}`).join("\n"));
+  if (pendingDestinations.length > 0) {
+    sections.push(pendingDestinations.map((destination) => `- ${destination}`).join("\n"));
   }
 
-  if (deadDestinations.length > 0 && pricedTrips.length === 0) {
+  if (pendingDestinations.length > 0 && pricedTrips.length === 0) {
     sections.push("Stay22 pricing found 0 bookable hotel results for those trips.");
   }
 
@@ -103,23 +46,15 @@ function buildSummary(
     );
   }
 
-  if (unclearDestinations.length > 0) {
-    sections.push(
-      `Also found ${unclearDestinations.length} unclear trip lead${
-        unclearDestinations.length === 1 ? "" : "s"
-      }: ${unclearDestinations.join(", ")}`,
-    );
-  }
-
   return sections.join("\n");
 }
 
 function buildRoastEmbed(roast: RoastResult) {
   const embed = new EmbedBuilder()
-    .setTitle(roast.headline)
-    .setDescription(roast.closingLine)
+    .setTitle(`${roast.trips.length} Pending trip${roast.trips.length === 1 ? "" : "s"}`)
+    .setDescription(`${roast.headline}\n\n${roast.closingLine}`)
     .setColor(0x8a5a00)
-    .setFooter({ text: "Guilt Trip case file" });
+    .setFooter({ text: "Guilt Trip todo list" });
 
   roast.trips.forEach((trip, index) => {
     const roastLine =
@@ -127,8 +62,8 @@ function buildRoastEmbed(roast: RoastResult) {
       `${trip.destination}: about $${trip.totalCostPerPerson}/person to make the group chat stop lying.`;
 
     embed.addFields({
-      name: trip.destination,
-      value: `${roastLine}\n${trip.hotelName} · ~$${trip.totalCostPerPerson}/person\n[Book the evidence](${trip.bookingUrl})`,
+      name: `[ ] ${trip.destination}`,
+      value: `${roastLine}\nTodo: pick dates, confirm the group, and book ${trip.hotelName} (~$${trip.totalCostPerPerson}/person).\n[Booking link](${trip.bookingUrl})`,
     });
   });
 
@@ -147,25 +82,15 @@ function buildBookingButton(topTrip: PricedTrip) {
 export const autopsyCommand = {
   data: new SlashCommandBuilder()
     .setName("guilttrip")
-    .setDescription("Autopsy the channel's abandoned trip plans."),
+    .setDescription("Autopsy the channel's pending trip plans."),
 
   async execute(interaction: ChatInputCommandInteraction) {
     await interaction.deferReply();
 
-    const messages = await fetchRecentMessages(interaction);
-    const transcript = formatTranscript(messages);
-
-    if (!transcript) {
-      await interaction.editReply(
-        "Autopsy complete: I could not find enough non-bot message history to investigate.",
-      );
-      return;
-    }
-
-    let trips;
+    let pipelineResult;
 
     try {
-      trips = await parseTrips(transcript);
+      pipelineResult = await getTripPipelineResult(interaction);
     } catch (error) {
       if (error instanceof GeminiQuotaError) {
         await interaction.editReply(
@@ -177,22 +102,35 @@ export const autopsyCommand = {
       throw error;
     }
 
-    const deadTrips = trips.filter((trip) => trip.status === "dead");
-    const unclearTrips = trips.filter((trip) => trip.status === "unclear");
-    const pricedTrips = await priceTrips(deadTrips);
+    if (pipelineResult.pendingTrips.length === 0) {
+      if (pipelineResult.trips.length > 0) {
+        const destinations = pipelineResult.trips
+          .map((trip) => trip.destination)
+          .join(", ");
 
-    if (pricedTrips.length === 0) {
+        await interaction.editReply(
+          `I found trip chatter in the database (${destinations}), but none of it looks like a pending plan yet. Try a messier channel.`,
+        );
+        return;
+      }
+
+      await interaction.editReply(
+        "This server is suspiciously decisive. Try a messier channel.",
+      );
+      return;
+    }
+
+    if (pipelineResult.pricedTrips.length === 0) {
       await interaction.editReply(
         buildSummary(
-          deadTrips.map((trip) => trip.destination),
-          unclearTrips.map((trip) => trip.destination),
-          pricedTrips,
+          pipelineResult.pendingTrips.map((trip) => trip.destination),
+          pipelineResult.pricedTrips,
         ),
       );
       return;
     }
 
-    const roast = await generateRoast(pricedTrips);
+    const roast = await generateRoast(pipelineResult.pricedTrips);
     const topTrip = [...roast.trips].sort((a, b) => b.mentionCount - a.mentionCount)[0];
 
     await interaction.editReply(

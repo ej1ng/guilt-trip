@@ -54,7 +54,7 @@ interface RoastCopy {
 
 Rules:
 - Do not include markdown code fences, commentary, or a preamble.
-- headline should be a short stat-driven title about the abandoned trip evidence.
+- headline should be a short stat-driven title about pending trip evidence.
 - roastLines must contain exactly one line per trip, in the same order as the input trips.
 - Each roastLine must reference a real quote or quote fragment from rawQuotes and the real cost per person.
 - Keep each roastLine under 220 characters.

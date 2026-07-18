@@ -15,6 +15,7 @@ export interface PricedTrip extends TripMention {
   totalCostPerPerson: number;
   hotelName: string;
   bookingUrl: string;
+  priceUpdatedAt?: number;
 }
 
 export interface RoastResult {
@@ -23,4 +24,30 @@ export interface RoastResult {
   headline: string;
   roastLines: string[];
   closingLine: string;
+}
+
+export interface TripSuggestion {
+  destination: string;
+  feasibilityScore: number;
+  reason: string;
+  nextStep: string;
+}
+
+export interface SuggestionResult {
+  recommendedDestination: string;
+  title: string;
+  rationale: string;
+  rankedTrips: TripSuggestion[];
+}
+
+export interface TripSentiment {
+  destination: string;
+  username: string;
+  sentiment: "positive" | "negative" | "mixed" | "neutral";
+  attitude: string;
+  preferences: string[];
+  constraints: string[];
+  evidenceSummary: string;
+  confidence: number;
+  updatedAt: number;
 }
