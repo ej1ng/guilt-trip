@@ -21,7 +21,11 @@ const TRAVEL_SIGNAL_PATTERNS = [
   /\bbook(ing|ed)?\b/i,
   /\bvisit(ing)?\b/i,
   /\bgo to\b/i,
+  /\bgoto\b/i,
+  /\bwanna\s+go\s+to\b/i,
+  /\bwant\s+to\s+go\s+to\b/i,
   /\bdown for\b/i,
+  /\bgrad\s*trip\b/i,
 ];
 
 const ATTITUDE_SIGNAL_PATTERNS = [
@@ -41,6 +45,27 @@ const ATTITUDE_SIGNAL_PATTERNS = [
   /\baugust\b/i,
   /\bsummer\b/i,
   /\bwinter\b/i,
+];
+
+const COMMON_DESTINATION_PATTERNS = [
+  /\bkorea\b/i,
+  /\bsouth korea\b/i,
+  /\bjapan\b/i,
+  /\btokyo\b/i,
+  /\bbahamas\b/i,
+  /\bmexico\b/i,
+  /\bcanada\b/i,
+  /\bmontreal\b/i,
+  /\bmiami\b/i,
+  /\bchicago\b/i,
+  /\bnew york\b/i,
+  /\bla\b/i,
+  /\blos angeles\b/i,
+  /\bparis\b/i,
+  /\blondon\b/i,
+  /\bitaly\b/i,
+  /\bgreece\b/i,
+  /\bhawaii\b/i,
 ];
 
 interface SentimentObservation {
@@ -104,6 +129,7 @@ function shouldAnalyzeMessage(message: Message) {
   return (
     TRAVEL_SIGNAL_PATTERNS.some((pattern) => pattern.test(content)) ||
     ATTITUDE_SIGNAL_PATTERNS.some((pattern) => pattern.test(content)) ||
+    COMMON_DESTINATION_PATTERNS.some((pattern) => pattern.test(content)) ||
     mentionsKnownDestination(message.channelId, content) ||
     looksLikeStandalonePlaceOrTripIdea(content)
   );

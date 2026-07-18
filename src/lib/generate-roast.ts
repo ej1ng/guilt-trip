@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
+import { getSafeHotelName } from "./trip-display.js";
 import type { PricedTrip, RoastResult } from "./types.js";
 
 const MODEL_NAME = "gemini-flash-lite-latest";
@@ -34,7 +35,7 @@ function buildRoastPrompt(trips: PricedTrip[]) {
     rawQuotes: trip.rawQuotes,
     mentionCount: trip.mentionCount,
     participants: trip.participants,
-    hotelName: trip.hotelName,
+    hotelName: getSafeHotelName(trip),
     nightlyRate: trip.nightlyRate,
     suggestedNights: trip.suggestedNights,
     totalCostPerPerson: trip.totalCostPerPerson,
@@ -60,9 +61,24 @@ Rules:
 - Keep each roastLine under 220 characters.
 - closingLine should pivot toward "so are we doing this or not" and reference the most-mentioned trip.
 - Do not invent prices, hotels, destinations, quotes, or participants.
+- Do not make romantic, dating, sexual, couple, or relationship insinuations.
+- Do not riff on hotel names that contain words like "Love", "Romance", "Couple", or similar; treat hotel names neutrally.
+- Do not imply participants are dating, hooking up, in love, a couple, or romantically involved.
 
 Priced trips:
 ${JSON.stringify(tripPayload, null, 2)}`;
+}
+
+function removeRomanticInsinuations(text: string, trip: PricedTrip) {
+  if (
+    !/\b(in love|actually in love|dating|date night|couple|couples|romance|romantic|hooking up|honeymoon|situationship|soulmate|lovers?)\b/i.test(
+      text,
+    )
+  ) {
+    return text;
+  }
+
+  return `${trip.destination}: about $${trip.totalCostPerPerson}/person to turn the group chat from "we should go" into "we actually booked it."`;
 }
 
 function normalizeRoastCopy(value: unknown, trips: PricedTrip[]): RoastCopy {
@@ -84,7 +100,7 @@ function normalizeRoastCopy(value: unknown, trips: PricedTrip[]): RoastCopy {
     const line = roast.roastLines?.[index];
 
     if (typeof line === "string" && line.trim().length > 0) {
-      return line.trim();
+      return removeRomanticInsinuations(line.trim(), trip);
     }
 
     return `${trip.destination}: all that talk and it is currently about $${trip.totalCostPerPerson}/person to stop making it a group chat ghost story.`;

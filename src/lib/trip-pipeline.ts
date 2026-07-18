@@ -10,9 +10,38 @@ import {
 } from "./db.js";
 import { parseTrips } from "./parse-trips.js";
 import { priceTrips } from "./price-trips.js";
+import { sortTripsByPreference } from "./trip-display.js";
 import type { PricedTrip, TripMention, TripSentiment } from "./types.js";
 
 const PRICE_STALE_MS = 24 * 60 * 60 * 1000;
+
+function mergeTrips(storedTrips: TripMention[], parsedTrips: TripMention[]) {
+  const tripsByDestination = new Map<string, TripMention>();
+
+  storedTrips.forEach((trip) => {
+    tripsByDestination.set(trip.destination.toLowerCase(), trip);
+  });
+
+  parsedTrips.forEach((trip) => {
+    const key = trip.destination.toLowerCase();
+    const existingTrip = tripsByDestination.get(key);
+
+    if (!existingTrip) {
+      tripsByDestination.set(key, trip);
+      return;
+    }
+
+    tripsByDestination.set(key, {
+      ...existingTrip,
+      rawQuotes: [...new Set([...existingTrip.rawQuotes, ...trip.rawQuotes])],
+      mentionCount: Math.max(existingTrip.mentionCount, trip.mentionCount),
+      participants: [...new Set([...existingTrip.participants, ...trip.participants])],
+      status: existingTrip.status === "dead" || trip.status === "dead" ? "dead" : "unclear",
+    });
+  });
+
+  return [...tripsByDestination.values()];
+}
 
 export interface TripPipelineResult {
   transcript: string;
@@ -33,16 +62,28 @@ export async function getTripPipelineResult(
   const transcript = await getChannelTranscript(interaction);
   let trips = getStoredTripMentions(channelId);
   let usedStoredTrips = trips.length > 0;
+  const sentiments = getStoredTripSentiments(channelId);
 
-  if (trips.length === 0 && transcript) {
-    trips = await parseTrips(transcript);
-    saveTripMentions(channelId, trips);
+  if (transcript) {
+    const parsedTrips = await parseTrips(transcript);
+
+    if (parsedTrips.length > 0) {
+      trips = mergeTrips(trips, parsedTrips);
+      saveTripMentions(channelId, trips);
+    }
   }
 
-  const deadTrips = trips.filter((trip) => trip.status === "dead");
-  const unclearTrips = trips.filter((trip) => trip.status === "unclear");
-  const pendingTrips = trips.filter(
-    (trip) => trip.status === "dead" || trip.status === "unclear",
+  const deadTrips = sortTripsByPreference(
+    trips.filter((trip) => trip.status === "dead"),
+    sentiments,
+  );
+  const unclearTrips = sortTripsByPreference(
+    trips.filter((trip) => trip.status === "unclear"),
+    sentiments,
+  );
+  const pendingTrips = sortTripsByPreference(
+    trips.filter((trip) => trip.status === "dead" || trip.status === "unclear"),
+    sentiments,
   );
 
   let pricedTrips = getStoredPricedTrips(channelId);
@@ -70,14 +111,16 @@ export async function getTripPipelineResult(
     }
   }
 
+  pricedTrips = sortTripsByPreference(pricedTrips, sentiments);
+
   return {
     transcript,
-    trips,
+    trips: sortTripsByPreference(trips, sentiments),
     pendingTrips,
     deadTrips,
     unclearTrips,
     pricedTrips,
-    sentiments: getStoredTripSentiments(channelId),
+    sentiments,
     usedStoredTrips,
     usedStoredPrices,
   };

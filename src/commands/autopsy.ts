@@ -9,6 +9,7 @@ import {
 
 import { generateRoast } from "../lib/generate-roast.js";
 import { GeminiQuotaError } from "../lib/parse-trips.js";
+import { getSafeHotelName } from "../lib/trip-display.js";
 import { getTripPipelineResult } from "../lib/trip-pipeline.js";
 import type { PricedTrip, RoastResult } from "../lib/types.js";
 
@@ -40,7 +41,7 @@ function buildSummary(
         `Priced ${pricedTrips.length} trip${pricedTrips.length === 1 ? "" : "s"}:`,
         ...pricedTrips.map(
           (trip) =>
-            `- ${trip.destination}: ~$${trip.totalCostPerPerson}/person for ${trip.suggestedNights} nights at ${trip.hotelName}`,
+            `- ${trip.destination}: ~$${trip.totalCostPerPerson}/person for ${trip.suggestedNights} nights at ${getSafeHotelName(trip)}`,
         ),
       ].join("\n"),
     );
@@ -57,13 +58,14 @@ function buildRoastEmbed(roast: RoastResult) {
     .setFooter({ text: "Guilt Trip todo list" });
 
   roast.trips.forEach((trip, index) => {
+    const hotelName = getSafeHotelName(trip);
     const roastLine =
       roast.roastLines[index] ??
       `${trip.destination}: about $${trip.totalCostPerPerson}/person to make the group chat stop lying.`;
 
     embed.addFields({
       name: `[ ] ${trip.destination}`,
-      value: `${roastLine}\nTodo: pick dates, confirm the group, and book ${trip.hotelName} (~$${trip.totalCostPerPerson}/person).\n[Booking link](${trip.bookingUrl})`,
+      value: `${roastLine}\nTodo: pick dates, confirm the group, and book ${hotelName} (~$${trip.totalCostPerPerson}/person).\n[Booking link](${trip.bookingUrl})`,
     });
   });
 
@@ -131,7 +133,7 @@ export const autopsyCommand = {
     }
 
     const roast = await generateRoast(pipelineResult.pricedTrips);
-    const topTrip = [...roast.trips].sort((a, b) => b.mentionCount - a.mentionCount)[0];
+    const topTrip = roast.trips[0];
 
     await interaction.editReply(
       {

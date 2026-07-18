@@ -2,10 +2,12 @@ import type { Message } from "discord.js";
 
 import {
   getStoredPricedTrips,
+  getStoredTripSentiments,
   getStoredTripMentions,
   savePricedTrips,
 } from "./db.js";
 import { priceTrips } from "./price-trips.js";
+import { getSafeHotelName, sortTripsByPreference } from "./trip-display.js";
 import type { KeywordTrigger } from "./keyword-tracker.js";
 import type { PricedTrip, TripMention } from "./types.js";
 
@@ -63,15 +65,16 @@ async function getFallbackPricedTrip() {
 }
 
 async function getKeywordCalloutPricedTrip(channelId: string) {
-  const storedPricedTrips = getStoredPricedTrips(channelId);
-  const storedPricedTrip = pickRandomItem(storedPricedTrips);
+  const sentiments = getStoredTripSentiments(channelId);
+  const storedPricedTrips = sortTripsByPreference(getStoredPricedTrips(channelId), sentiments);
+  const storedPricedTrip = storedPricedTrips[0];
 
   if (storedPricedTrip) {
     return storedPricedTrip;
   }
 
-  const storedTripMentions = getStoredTripMentions(channelId);
-  const storedTripMention = pickRandomItem(storedTripMentions);
+  const storedTripMentions = sortTripsByPreference(getStoredTripMentions(channelId), sentiments);
+  const storedTripMention = storedTripMentions[0];
 
   if (storedTripMention) {
     const [pricedTrip] = await priceTrips([storedTripMention]);
@@ -178,12 +181,13 @@ export async function sendKeywordCallout(message: Message, trigger: KeywordTrigg
   const nightsText = formatNightsTowardTrip(trigger.totalSpend, pricedTrip.nightlyRate);
   const roast = buildKeywordRoast(trigger.keyword, message.author.username);
   const costUnit = formatCostUnit(trigger.keyword, trigger.estimatedCost);
+  const hotelName = getSafeHotelName(pricedTrip);
   const spendContext =
     trigger.kind === "plan-confirmed"
       ? `${trigger.keyword} is somehow making it out of the group chat but not your vacas; ${costUnit}, that's $${trigger.totalSpend}`
       : `That's the ${trigger.count}th time ${trigger.keyword} came up this week; ${costUnit}, that's $${trigger.totalSpend}`;
 
   await message.channel.send(
-    `${roast} ${spendContext} — about ${nightsText} at [${pricedTrip.hotelName}](${pricedTrip.bookingUrl}) in ${pricedTrip.destination} (~$${pricedTrip.nightlyRate}/night).`,
+    `${roast} ${spendContext} — about ${nightsText} at [${hotelName}](${pricedTrip.bookingUrl}) in ${pricedTrip.destination} (~$${pricedTrip.nightlyRate}/night).`,
   );
 }

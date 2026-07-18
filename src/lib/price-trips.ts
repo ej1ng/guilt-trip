@@ -27,6 +27,9 @@ interface HotelCandidate {
   bookingUrl: string;
 }
 
+const ROMANTIC_PROPERTY_PATTERN =
+  /\b(love|romance|romantic|couple|couples|honeymoon|lover|lovers|adults?\s*only|motel)\b/i;
+
 function requireEnv(name: string) {
   const value = process.env[name];
 
@@ -92,7 +95,16 @@ function pickMidRangeHotel(candidates: HotelCandidate[]) {
     return null;
   }
 
-  return candidates[Math.floor(candidates.length / 2)];
+  const neutralCandidates = candidates.filter(
+    (candidate) => !ROMANTIC_PROPERTY_PATTERN.test(candidate.hotelName),
+  );
+  const candidatePool = neutralCandidates.length > 0 ? neutralCandidates : candidates;
+
+  if (neutralCandidates.length === 0) {
+    console.warn("No neutral hotel candidates found; falling back to unfiltered results.");
+  }
+
+  return candidatePool[Math.floor(candidatePool.length / 2)];
 }
 
 async function searchStay22(destination: string, participantCount: number) {
